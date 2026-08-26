@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Home's Grocery Manager</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+  :root{
+    --bg:#FBF6EC; --paper:#F5EEDD; --surface:#FFFFFF; --border:#E7DFCF;
+    --text:#2B2620; --text-muted:#8A7F6D;
+    --primary:#2F5233; --primary-dark:#1F3A22; --primary-soft:#E4ECE1;
+    --tomato:#C1440E; --tomato-soft:#F8E3D8;
+    --citrus:#E8A33D; --citrus-soft:#FBECD2;
+    --shadow: 0 1px 2px rgba(43,38,32,.06), 0 6px 18px rgba(43,38,32,.06);
+    --radius: 16px;
+  }
+  html.dark{
+    --bg:#171A14; --paper:#1D2118; --surface:#20241B; --border:#2E3327;
+    --text:#F1EEE4; --text-muted:#9AA08D;
+    --primary:#8FBF8A; --primary-dark:#6FA36B; --primary-soft:#25301F;
+    --tomato:#E17A4E; --tomato-soft:#3A2620;
+    --citrus:#F0C169; --citrus-soft:#332818;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Manrope',sans-serif;
+    background-image: radial-gradient(circle at 20% 0%, var(--paper) 0%, var(--bg) 55%);
+    min-height:100vh; -webkit-tap-highlight-color:transparent;}
+  h1,h2,h3,.display{font-family:'Fraunces',serif;}
+  ::-webkit-scrollbar{width:0;height:0;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
+  .btn{font-family:'Manrope',sans-serif;font-weight:700;border:none;border-radius:12px;padding:10px 16px;cursor:pointer;transition:transform .12s ease, opacity .12s ease;}
+  .btn:active{transform:scale(.96);}
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-soft{background:var(--primary-soft);color:var(--primary-dark);}
+  .btn-tomato{background:var(--tomato);color:#fff;}
+  .btn-ghost{background:transparent;color:var(--text-muted);}
+  input,select,textarea{font-family:'Manrope',sans-serif;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);width:100%;font-size:14px;}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--primary);outline-offset:1px;}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;}
+  .tab-active{color:var(--primary);}
+  .tab-inactive{color:var(--text-muted);}
+  .fade-in{animation:fadeIn .25s ease both;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .pop{animation:pop .28s cubic-bezier(.34,1.56,.64,1) both;}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+  .checkline{transition:background .15s ease, opacity .15s ease;}
+  @media (prefers-reduced-motion: reduce){.fade-in,.pop{animation:none;}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/plain" id="app-source">
+const {useState,useEffect,useMemo,useRef,useCallback} = React;
+
+/* ---------------- constants ---------------- */
+const CATEGORIES = ["Rice / Grains / Lentils","Oil / Fat","Vegetables","Meat / Fish","Breakfast","Snacks","Household / Cleaning"];
+const UNITS = ["Kg","g","L","ml","pcs","packet","dozen"];
+const STAPLE_NAMES = ["Rice","Soybean Oil","Onion","Egg","Milk","Salt"];
+
+const SEED_ITEMS = [
+ ["Rice / Grains / Lentils",["Rice","Chinigura Rice","Maida","Atta","Moshur Dal","Mug Dal","Corn Flour","Beshon","Kheshari","Cholabut","Oats"]],
+ ["Oil / Fat",["Soybean Oil","Mustard Oil","Ghee","Butter"]],
+ ["Vegetables",["Onion","Alu (Potato)","Ada (Ginger)","Roshun (Garlic)","Lal Sak","Dherosh","Vegetables","Salt"]],
+ ["Meat / Fish",["Chicken","Murgi","Beef","Duck","Fish","Chingri Fish","Egg","Sausage"]],
+ ["Breakfast",["Bread","Paratha","Milk","Liquid Milk","Powder Milk","Tea Leaf","Coffee","Corn Flakes","Sugar","Shemai","Khejur"]],
+ ["Snacks",["Pasta","Noodles","Biscuit","Penut","Chonachor","Sauce","Tang","Gol Morich"]],
+ ["Household / Cleaning",["Good Knight","Hand Wash","Aerosol","Vim","Detergent","Soap"]],
+].flatMap(([cat,names])=>names.map((name,i)=>({
+  id:"seed-"+cat.slice(0,3)+"-"+i, name, category:cat, defaultUnit: cat==="Rice / Grains / Lentils"?"Kg": cat==="Oil / Fat"?"L": "pcs",
+  isStaple: STAPLE_NAMES.includes(name), lowStock:false, order:i
+})));
+
+const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const todayISO = ()=> new Date().toISOString().slice(0,10);
+const monthKey = (isoDate)=>{ const d=new Date(isoDate); return d.toLocaleString('en-US',{month:'short'})+"-"+d.getFullYear(); };
+const fmtMoney = (n,cur)=> (cur||"৳")+" "+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+const fmtDate = (iso)=> new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+/* ---------------- local storage ---------------- */
+const LS_KEY = "grocery_mgr_v1";
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+function saveLocal(state){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){}
+}
+function defaultState(){
+  return {
+    items: SEED_ITEMS,
+    log: [],
+    checklist: [],
+    settings: { currency:"৳", theme:"light", firebaseConfig:{
+      apiKey: "AIzaSyAnqeZaLWCLPXInk6Mix_7g3R44wR-BcBQ",
+      authDomain: "my-personal-apps-f4ad7.firebaseapp.com",
+      projectId: "my-personal-apps-f4ad7",
+      storageBucket: "my-personal-apps-f4ad7.firebasestorage.app",
+      messagingSenderId: "80797726651",
+      appId: "1:80797726651:web:a6aa98bf1205b26947f69e"
+    } }
+  };
+}
+
+/* ---------------- optional Firebase sync ---------------- */
+// Fixed sync id so every device/browser writes to the SAME Firestore
+// document — anonymous auth alone won't do this, since each device gets
+// its own random anon UID. Change this string if you ever want to start
+// a fresh, separate data set.
+const APP_SYNC_ID = "jabed-home-grocery";
+let fbApp=null, fbDb=null, fbUid=null, fbReady=false;
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    if(document.querySelector('script[src="'+src+'"]')) return res();
+    const s=document.createElement('script'); s.src=src; s.onload=res;
+    s.onerror=()=>rej(new Error("Couldn't load "+src+" — check your internet connection."));
+    document.head.appendChild(s);
+  });
+}
+async function initFirebase(config, onStatus){
+  try{
+    onStatus("connecting");
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+    if(!fbApp) fbApp = firebase.initializeApp(config);
+    fbDb = firebase.firestore();
+    try{ fbDb.enablePersistence({synchronizeTabs:true}); }catch(e){}
+    const cred = await firebase.auth().signInAnonymously();
+    fbUid = firebase.auth().currentUser.uid;
+    fbReady = true;
+    onStatus("connected");
+    return true;
+  }catch(e){
+    console.error("Firebase init failed", e);
+    fbReady=false;
+    onStatus("error: "+(e && e.message ? e.message : "could not connect. Check your internet connection and that Anonymous Auth + Firestore are enabled in the Firebase console."));
+    return false;
+  }
+}
+async function cloudSave(state){
+  if(!fbReady||!fbDb) return;
+  try{
+    await fbDb.collection("groceryApp").doc(APP_SYNC_ID).set({
+      items: state.items, log: state.log, checklist: state.checklist,
+      settings: state.settings, updatedAt: Date.now()
+    });
+  }catch(e){ console.error("cloud save failed", e); }
+}
+async function cloudLoad(){
+  if(!fbReady||!fbDb) return null;
+  try{
+    const doc = await fbDb.collection("groceryApp").doc(APP_SYNC_ID).get();
+    if(doc.exists) return doc.data();
+  }catch(e){ console.error("cloud load failed", e); }
+  return null;
+}
+function subscribeCloud(onData){
+  if(!fbReady||!fbDb) return ()=>{};
+  return fbDb.collection("groceryApp").doc(APP_SYNC_ID).onSnapshot(doc=>{
+    if(doc.exists) onData(doc.data());
+  }, err=> console.error("cloud subscribe failed", err));
+}
+
+/* ---------------- analytics ---------------- */
+function computeSummary(log){
+  const map = {};
+  log.forEach(l=>{
+    const key = l.itemName;
+    if(!map[key]) map[key]={itemName:l.itemName, category:l.category, totalQty:0, unit:l.unit, timesOfPurchase:0, lastPurchaseDate:null, lastPurchaseQty:0};
+    const m = map[key];
+    m.totalQty += Number(l.quantity)||0;
+    m.timesOfPurchase += 1;
+    if(!m.lastPurchaseDate || l.purchasedAt > m.lastPurchaseDate){ m.lastPurchaseDate = l.purchasedAt; m.lastPurchaseQty = l.quantity; m.unit=l.unit; }
+  });
+  return Object.values(map).sort((a,b)=> (b.lastPurchaseDate||"").localeCompare(a.lastPurchaseDate||""));
+}
+function computeReorderSuggestions(items, log){
+  const byItem = {};
+  log.forEach(l=>{ (byItem[l.itemName] = byItem[l.itemName]||[]).push(l); });
+  const out = [];
+  Object.entries(byItem).forEach(([name, entries])=>{
+    if(entries.length<2) return;
+    const dates = entries.map(e=> new Date(e.purchasedAt).getTime()).sort((a,b)=>a-b);
+    let gaps=[]; for(let i=1;i<dates.length;i++) gaps.push(dates[i]-dates[i-1]);
+    const avgMs = gaps.reduce((a,b)=>a+b,0)/gaps.length;
+    const lastMs = dates[dates.length-1];
+    const sinceMs = Date.now()-lastMs;
+    if(sinceMs >= avgMs*0.85){
+      const avgDays = Math.round(avgMs/86400000);
+      const dueDays = Math.round(sinceMs/86400000);
+      out.push({itemName:name, category:entries[0].category, avgDays, dueDays, unit:entries[entries.length-1].unit});
+    }
+  });
+  items.filter(i=>i.isStaple).forEach(i=>{
+    if(!out.find(o=>o.itemName===i.name) && !byItem[i.name]){
+      out.push({itemName:i.name, category:i.category, avgDays:null, dueDays:null, unit:i.defaultUnit, staple:true});
+    }
+  });
+  return out.sort((a,b)=> (b.dueDays||0)-(a.dueDays||0)).slice(0,8);
+}
+
+/* ---------------- small chart primitives (no external chart lib) ---------------- */
+function Donut({data, size=140}){
+  const total = data.reduce((s,d)=>s+d.value,0)||1;
+  const r=size/2-14, cx=size/2, cy=size/2;
+  let acc=0;
+  const colors=["#2F5233","#C1440E","#E8A33D","#7A9B76","#B5651D","#D9B44A","#4C6B4F","#A0522D"];
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {data.map((d,i)=>{
+        const frac = d.value/total;
+        const start = acc/total*2*Math.PI - Math.PI/2;
+        acc += d.value;
+        const end = acc/total*2*Math.PI - Math.PI/2;
+        const x1=cx+r*Math.cos(start), y1=cy+r*Math.sin(start);
+        const x2=cx+r*Math.cos(end), y2=cy+r*Math.sin(end);
+        const large = end-start > Math.PI ? 1:0;
+        const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+        return <path key={i} d={path} fill={colors[i%colors.length]} opacity="0.92"/>;
+      })}
+      <circle cx={cx} cy={cy} r={r*0.55} fill="var(--surface)"/>
+    </svg>
+  );
+}
+function BarRow({label, value, max, color}){
+  const pct = max? Math.max(4,(value/max)*100):0;
+  return (
+    <div style={{marginBottom:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3,color:'var(--text-muted)'}}>
+        <span>{label}</span><span>{value}</span>
+      </div>
+      <div style={{background:'var(--paper)',borderRadius:8,height:8,overflow:'hidden'}}>
+        <div style={{width:pct+'%',height:'100%',background:color||'var(--primary)',borderRadius:8,transition:'width .4s ease'}}/>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- shared bits ---------------- */
+function TopBar({title, subtitle, right}){
+  return (
+    <div style={{padding:'22px 18px 14px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+        <div>
+          <h1 className="display" style={{fontSize:24,fontWeight:600,margin:0,color:'var(--text)'}}>{title}</h1>
+          {subtitle && <div style={{fontSize:12.5,color:'var(--text-muted)',marginTop:2}}>{subtitle}</div>}
+        </div>
+        {right}
+      </div>
+    </div>
+  );
+}
+function Empty({label}){
+  return <div className="card fade-in" style={{padding:'28px 18px',textAlign:'center',color:'var(--text-muted)',fontSize:13.5}}>{label}</div>;
+}
+function CategoryChip({cat}){
+  return <span className="chip" style={{background:'var(--primary-soft)',color:'var(--primary-dark)'}}>{cat}</span>;
+}
+
+/* ---------------- Dashboard ---------------- */
+function Dashboard({items, log, checklist, settings, goTab, addToChecklist}){
+  const [monthOffset,setMonthOffset]=useState(0);
+  const now = new Date(); now.setMonth(now.getMonth()-monthOffset);
+  const mKey = now.toLocaleString('en-US',{month:'short'})+"-"+now.getFullYear();
+  const monthLog = log.filter(l=>l.month===mKey);
+  const distinctItems = new Set(monthLog.map(l=>l.itemName)).size;
+  const trips = new Set(monthLog.map(l=>l.purchasedAt.slice(0,10))).size;
+  const pendingChecklist = checklist.filter(c=>!c.checked);
+  const checklistTotal = pendingChecklist.reduce((s,c)=>s+(Number(c.amount)||0),0);
+
+  const catMap={};
+  monthLog.forEach(l=>{ catMap[l.category]=(catMap[l.category]||0)+ (Number(l.quantity)||0); });
+  const donutData = Object.entries(catMap).map(([k,v])=>({label:k,value:v}));
+
+  const topItems = useMemo(()=>{
+    const m={}; monthLog.forEach(l=>{ m[l.itemName]=(m[l.itemName]||0)+(Number(l.quantity)||0); });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  },[monthLog]);
+  const maxTop = topItems.length? topItems[0][1]:1;
+
+  const reorder = useMemo(()=>computeReorderSuggestions(items, log),[items,log]);
+
+  const kpis = [
+    {label:"Items bought", value:distinctItems},
+    {label:"Shopping trips", value:trips},
+    {label:"Pending checklist", value:pendingChecklist.length},
+    {label:"Checklist total", value:fmtMoney(checklistTotal,settings.currency)},
+  ];
+
+  return (
+    <div className="fade-in" style={{padding:'0 16px 90px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:12,marginBottom:14}}>
+        <button className="btn btn-ghost" onClick={()=>setMonthOffset(o=>o+1)}>◀</button>
+        <div style={{fontWeight:700,fontSize:14}}>{mKey}</div>
+        <button className="btn btn-ghost" disabled={monthOffset===0} style={{opacity:monthOffset===0?.3:1}} onClick={()=>setMonthOffset(o=>Math.max(0,o-1))}>▶</button>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+        {kpis.map((k,i)=>(
+          <div key={i} className="card pop" style={{padding:'14px 14px'}}>
+            <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{k.label}</div>
+            <div className="display" style={{fontSize:22,marginTop:4,color:'var(--primary-dark)'}}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card fade-in" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 10px',fontSize:15}}>By category (qty)</h3>
+        {donutData.length? (
+          <div style={{display:'flex',alignItems:'center',gap:16}}>
+            <Donut data={donutData}/>
+            <div style={{flex:1}}>
+              {donutData.slice(0,5).map((d,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:6,color:'var(--text-muted)'}}>
+                  <span>{d.label}</span><span style={{fontWeight:700,color:'var(--text)'}}>{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ): <Empty label="No purchases logged this month yet."/>}
+      </div>
+
+      <div className="card fade-in" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 10px',fontSize:15}}>Top items this month</h3>
+        {topItems.length? topItems.map(([name,qty])=><BarRow key={name} label={name} value={qty} max={maxTop}/>) : <Empty label="Nothing logged yet."/>}
+      </div>
+
+      <div className="card fade-in" style={{padding:16,marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <h3 style={{margin:0,fontSize:15}}>Reorder due</h3>
+          <span className="chip" style={{background:'var(--tomato-soft)',color:'var(--tomato)'}}>{reorder.length}</span>
+        </div>
+        {reorder.length? reorder.map((r,i)=>(
+          <div key={i} className="checkline" style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom: i<reorder.length-1?'1px solid var(--border)':'none'}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:13.5}}>{r.itemName}</div>
+              <div style={{fontSize:11.5,color:'var(--text-muted)'}}>{r.staple? "Staple, not yet logged" : `Usually every ~${r.avgDays}d · ${r.dueDays}d since last`}</div>
+            </div>
+            <button className="btn btn-soft" style={{fontSize:12,padding:'7px 12px'}} onClick={()=>addToChecklist(r.itemName,r.category,r.unit)}>+ Add</button>
+          </div>
+        )) : <Empty label="No reorder suggestions yet — log a few purchases first."/>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Checklist ---------------- */
+function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping}){
+  const [name,setName]=useState(""); const [qty,setQty]=useState(""); const [unit,setUnit]=useState("");
+  const [amount,setAmount]=useState(""); const [suggest,setSuggest]=useState([]);
+
+  const pending = checklist.filter(c=>!c.checked);
+  const done = checklist.filter(c=>c.checked);
+  const total = pending.reduce((s,c)=>s+(Number(c.amount)||0),0);
+
+  function onNameChange(v){
+    setName(v);
+    if(v.length>0){
+      setSuggest(items.filter(i=>i.name.toLowerCase().includes(v.toLowerCase())).slice(0,5));
+    } else setSuggest([]);
+  }
+  function pick(it){ setName(it.name); setUnit(it.defaultUnit); setSuggest([]); }
+  function add(){
+    if(!name.trim()) return;
+    const match = items.find(i=>i.name.toLowerCase()===name.toLowerCase());
+    setChecklist(prev=>[...prev,{
+      id:uid(), itemName:name.trim(), category: match? match.category:"Household / Cleaning",
+      qty: qty||null, unit: unit||match?.defaultUnit||"", checked:false,
+      amount: amount? Number(amount): null, source:"manual", addedAt: Date.now()
+    }]);
+    setName("");setQty("");setUnit("");setAmount("");setSuggest([]);
+  }
+  function toggle(id){ setChecklist(prev=>prev.map(c=>c.id===id?{...c,checked:!c.checked}:c)); }
+  function remove(id){ setChecklist(prev=>prev.filter(c=>c.id!==id)); }
+  function updateAmount(id, v){ setChecklist(prev=>prev.map(c=>c.id===id?{...c,amount: v===""?null:Number(v)}:c)); }
+  function clearChecked(){ setChecklist(prev=>prev.filter(c=>!c.checked)); }
+
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <div className="card" style={{position:'sticky',top:0,zIndex:5,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--primary-soft)',borderColor:'var(--primary)'}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--primary-dark)',textTransform:'uppercase',letterSpacing:'.03em'}}>Running total</div>
+          <div className="display" style={{fontSize:22,color:'var(--primary-dark)'}}>{fmtMoney(total,settings.currency)}</div>
+        </div>
+        <button className="btn btn-primary" onClick={onOpenShopping} disabled={!pending.length} style={{opacity: pending.length?1:.5}}>Shopping Mode</button>
+      </div>
+
+      <div className="card" style={{padding:14,marginBottom:16}}>
+        <div style={{position:'relative'}}>
+          <input placeholder="Item name…" value={name} onChange={e=>onNameChange(e.target.value)} />
+          {suggest.length>0 && (
+            <div className="card" style={{position:'absolute',top:'100%',left:0,right:0,zIndex:20,marginTop:4,maxHeight:160,overflowY:'auto'}}>
+              {suggest.map(s=>(
+                <div key={s.id} onClick={()=>pick(s)} style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--border)'}}>{s.name} <span style={{color:'var(--text-muted)',fontSize:11}}>· {s.category}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <input placeholder="Qty (optional)" value={qty} onChange={e=>setQty(e.target.value)} />
+          <select value={unit} onChange={e=>setUnit(e.target.value)}>
+            <option value="">Unit</option>
+            {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:8}}>
+          <input placeholder={`Expected amount (${settings.currency}, optional)`} value={amount} onChange={e=>setAmount(e.target.value)} />
+          <button className="btn btn-primary" onClick={add}>Add</button>
+        </div>
+      </div>
+
+      {pending.length===0 && done.length===0 && <Empty label="Checklist is empty. Add items you need to buy."/>}
+
+      {pending.length>0 && (
+        <div className="card" style={{padding:'6px 4px',marginBottom:14}}>
+          {pending.map((c,i)=>(
+            <div key={c.id} className="checkline" style={{display:'flex',alignItems:'center',gap:10,padding:'10px 10px',borderBottom: i<pending.length-1?'1px solid var(--border)':'none'}}>
+              <input type="checkbox" checked={false} onChange={()=>toggle(c.id)} style={{width:18,height:18}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13.5}}>{c.itemName} {c.qty && <span style={{color:'var(--text-muted)',fontWeight:400}}>· {c.qty} {c.unit}</span>}</div>
+                <CategoryChip cat={c.category}/>
+              </div>
+              <input style={{width:78,fontSize:12,padding:'6px 8px'}} placeholder={settings.currency} value={c.amount??""} onChange={e=>updateAmount(c.id,e.target.value)} />
+              <button className="btn btn-ghost" onClick={()=>remove(c.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {done.length>0 && (
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'6px 4px'}}>
+            <span style={{fontSize:12,color:'var(--text-muted)',fontWeight:700}}>Checked ({done.length})</span>
+            <button className="btn btn-ghost" style={{fontSize:12}} onClick={clearChecked}>Clear checked</button>
+          </div>
+          <div className="card" style={{padding:'6px 4px',opacity:.6}}>
+            {done.map((c,i)=>(
+              <div key={c.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderBottom:i<done.length-1?'1px solid var(--border)':'none'}}>
+                <input type="checkbox" checked={true} onChange={()=>toggle(c.id)} style={{width:18,height:18}}/>
+                <div style={{flex:1,textDecoration:'line-through',fontSize:13}}>{c.itemName}</div>
+                <button className="btn btn-ghost" onClick={()=>remove(c.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShoppingMode({checklist, setChecklist, settings, onClose}){
+  const pending = checklist.filter(c=>!c.checked);
+  const remaining = pending.reduce((s,c)=>s+(Number(c.amount)||0),0);
+  const byCat={};
+  pending.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
+  function toggle(id){ setChecklist(prev=>prev.map(c=>c.id===id?{...c,checked:!c.checked}:c)); }
+  return (
+    <div style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:100,overflowY:'auto'}} className="fade-in">
+      <div style={{position:'sticky',top:0,background:'var(--primary)',color:'#fff',padding:'18px 18px 22px',borderRadius:'0 0 20px 20px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <h2 className="display" style={{margin:0,fontSize:20}}>Shopping Mode</h2>
+          <button className="btn" style={{background:'rgba(255,255,255,.18)',color:'#fff'}} onClick={onClose}>Done</button>
+        </div>
+        <div style={{marginTop:10,fontSize:13,opacity:.85}}>Remaining to spend</div>
+        <div className="display" style={{fontSize:30}}>{fmtMoney(remaining,settings.currency)}</div>
+      </div>
+      <div style={{padding:'16px 16px 60px'}}>
+        {Object.keys(byCat).length===0 && <Empty label="All done! 🎉"/>}
+        {Object.entries(byCat).map(([cat,arr])=>(
+          <div key={cat} style={{marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:800,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',margin:'0 4px 8px'}}>{cat}</div>
+            <div className="card" style={{padding:'4px'}}>
+              {arr.map((c,i)=>(
+                <div key={c.id} onClick={()=>toggle(c.id)} className="checkline" style={{display:'flex',alignItems:'center',gap:12,padding:'16px 12px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}}>
+                  <div style={{width:26,height:26,borderRadius:8,border:'2px solid var(--primary)'}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:15}}>{c.itemName}</div>
+                    {c.qty && <div style={{fontSize:12,color:'var(--text-muted)'}}>{c.qty} {c.unit}</div>}
+                  </div>
+                  {c.amount!=null && <div style={{fontWeight:700,color:'var(--primary-dark)'}}>{fmtMoney(c.amount,settings.currency)}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Log purchase ---------------- */
+function LogView({items, log, setLog}){
+  const [name,setName]=useState(""); const [qty,setQty]=useState(""); const [unit,setUnit]=useState("");
+  const [date,setDate]=useState(todayISO()); const [note,setNote]=useState(""); const [suggest,setSuggest]=useState([]);
+  const [editId,setEditId]=useState(null);
+
+  function onNameChange(v){
+    setName(v);
+    setSuggest(v? items.filter(i=>i.name.toLowerCase().includes(v.toLowerCase())).slice(0,5) : []);
+  }
+  function pick(it){ setName(it.name); setUnit(it.defaultUnit); setSuggest([]); }
+
+  function submit(){
+    if(!name.trim()||!qty) return;
+    const match = items.find(i=>i.name.toLowerCase()===name.toLowerCase());
+    const entry = {
+      id: editId || uid(), itemName:name.trim(), category: match?match.category:"Household / Cleaning",
+      quantity:Number(qty), unit: unit||match?.defaultUnit||"pcs", note: note||null,
+      purchasedAt: date, month: monthKey(date)
+    };
+    setLog(prev=> editId ? prev.map(l=>l.id===editId?entry:l) : [entry,...prev]);
+    setName("");setQty("");setUnit("");setNote("");setDate(todayISO());setEditId(null);setSuggest([]);
+  }
+  function editEntry(l){ setEditId(l.id); setName(l.itemName); setQty(String(l.quantity)); setUnit(l.unit); setDate(l.purchasedAt); setNote(l.note||""); }
+  function removeEntry(id){ setLog(prev=>prev.filter(l=>l.id!==id)); }
+  function buyAgain(l){ setLog(prev=>[{...l,id:uid(),purchasedAt:todayISO(),month:monthKey(todayISO())},...prev]); }
+
+  const recent = log.slice(0,15);
+
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <div className="card" style={{padding:14,marginBottom:16}}>
+        <div style={{position:'relative'}}>
+          <input placeholder="What did you buy?" value={name} onChange={e=>onNameChange(e.target.value)} />
+          {suggest.length>0 && (
+            <div className="card" style={{position:'absolute',top:'100%',left:0,right:0,zIndex:20,marginTop:4,maxHeight:160,overflowY:'auto'}}>
+              {suggest.map(s=>(<div key={s.id} onClick={()=>pick(s)} style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--border)'}}>{s.name}</div>))}
+            </div>
+          )}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <input placeholder="Quantity" value={qty} onChange={e=>setQty(e.target.value)} />
+          <select value={unit} onChange={e=>setUnit(e.target.value)}>
+            <option value="">Unit</option>
+            {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} />
+          <input placeholder="Note (optional)" value={note} onChange={e=>setNote(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={submit}>{editId? "Save changes":"Log purchase"}</button>
+        {editId && <button className="btn btn-ghost" style={{width:'100%',marginTop:6}} onClick={()=>{setEditId(null);setName("");setQty("");setUnit("");setNote("");}}>Cancel edit</button>}
+      </div>
+
+      <h3 style={{fontSize:14,margin:'0 0 8px 4px',color:'var(--text-muted)'}}>Recent</h3>
+      {recent.length===0 && <Empty label="No purchases logged yet."/>}
+      <div className="card" style={{padding:'4px'}}>
+        {recent.map((l,i)=>(
+          <div key={l.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 10px',borderBottom:i<recent.length-1?'1px solid var(--border)':'none'}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:13.5}}>{l.itemName} <span style={{color:'var(--text-muted)',fontWeight:400}}>· {l.quantity} {l.unit}</span></div>
+              <div style={{fontSize:11.5,color:'var(--text-muted)'}}>{fmtDate(l.purchasedAt)}{l.note? " · "+l.note:""}</div>
+            </div>
+            <button className="btn btn-soft" style={{fontSize:11,padding:'6px 9px'}} onClick={()=>buyAgain(l)}>Buy again</button>
+            <button className="btn btn-ghost" onClick={()=>editEntry(l)}>✎</button>
+            <button className="btn btn-ghost" onClick={()=>removeEntry(l.id)}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Items / Library ---------------- */
+function ItemsView({items, setItems, addToChecklist, goLog}){
+  const [open,setOpen]=useState(()=>Object.fromEntries(CATEGORIES.map(c=>[c,true])));
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState({name:"",category:CATEGORIES[0],defaultUnit:"pcs",isStaple:false,lowStock:false});
+
+  function startAdd(){ setEditing("new"); setForm({name:"",category:CATEGORIES[0],defaultUnit:"pcs",isStaple:false,lowStock:false}); }
+  function startEdit(it){ setEditing(it.id); setForm({...it}); }
+  function save(){
+    if(!form.name.trim()) return;
+    if(editing==="new"){ setItems(prev=>[...prev,{...form,id:uid(),order:prev.length}]); }
+    else { setItems(prev=>prev.map(i=>i.id===editing?{...i,...form}:i)); }
+    setEditing(null);
+  }
+  function remove(id){ setItems(prev=>prev.filter(i=>i.id!==id)); }
+  function toggleFlag(it, key){ setItems(prev=>prev.map(i=>i.id===it.id?{...i,[key]:!i[key]}:i)); }
+
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <button className="btn btn-primary" style={{width:'100%',marginBottom:16}} onClick={startAdd}>+ New item</button>
+
+      {editing && (
+        <div className="card pop" style={{padding:14,marginBottom:16}}>
+          <input placeholder="Item name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={{marginBottom:8}}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+            <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
+              {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+            </select>
+            <select value={form.defaultUnit} onChange={e=>setForm({...form,defaultUnit:e.target.value})}>
+              {UNITS.map(u=><option key={u}>{u}</option>)}
+            </select>
+          </div>
+          <div style={{display:'flex',gap:14,marginBottom:10,fontSize:13}}>
+            <label style={{display:'flex',gap:6,alignItems:'center'}}><input type="checkbox" checked={form.isStaple} onChange={e=>setForm({...form,isStaple:e.target.checked})}/>Staple</label>
+            <label style={{display:'flex',gap:6,alignItems:'center'}}><input type="checkbox" checked={form.lowStock} onChange={e=>setForm({...form,lowStock:e.target.checked})}/>Low stock</label>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-primary" style={{flex:1}} onClick={save}>Save</button>
+            <button className="btn btn-ghost" onClick={()=>setEditing(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {CATEGORIES.map(cat=>{
+        const catItems = items.filter(i=>i.category===cat);
+        if(!catItems.length) return null;
+        return (
+          <div key={cat} className="card" style={{marginBottom:12,overflow:'hidden'}}>
+            <div onClick={()=>setOpen(o=>({...o,[cat]:!o[cat]}))} style={{padding:'12px 14px',display:'flex',justifyContent:'space-between',cursor:'pointer',background:'var(--paper)'}}>
+              <span style={{fontWeight:700,fontSize:13.5}}>{cat}</span>
+              <span style={{color:'var(--text-muted)',fontSize:12}}>{catItems.length} {open[cat]?"▲":"▼"}</span>
+            </div>
+            {open[cat] && catItems.map((it,i)=>(
+              <div key={it.id} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',borderTop:'1px solid var(--border)'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:13.5,display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                    {it.name}
+                    {it.isStaple && <span className="chip" style={{background:'var(--citrus-soft)',color:'#8a5b12'}}>staple</span>}
+                    {it.lowStock && <span className="chip" style={{background:'var(--tomato-soft)',color:'var(--tomato)'}}>low</span>}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>{it.defaultUnit}</div>
+                </div>
+                <button className="btn btn-soft" style={{fontSize:11,padding:'6px 8px'}} onClick={()=>addToChecklist(it.name,it.category,it.defaultUnit)}>+List</button>
+                <button className="btn btn-ghost" onClick={()=>startEdit(it)}>✎</button>
+                <button className="btn btn-ghost" onClick={()=>remove(it.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- More: Summary / Reports / Backup / Settings ---------------- */
+function SummaryView({log}){
+  const [q,setQ]=useState(""); const [monthFilter,setMonthFilter]=useState("");
+  const summary = useMemo(()=>computeSummary(log),[log]);
+  const months = useMemo(()=>[...new Set(log.map(l=>l.month))],[log]);
+  const filtered = summary.filter(s=> s.itemName.toLowerCase().includes(q.toLowerCase()));
+  const histFiltered = log.filter(l=> (!monthFilter||l.month===monthFilter) && l.itemName.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <input placeholder="Search item…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:10}}/>
+      <h3 style={{fontSize:14,margin:'6px 0 8px 2px'}}>Per-item summary</h3>
+      <div className="card" style={{padding:'4px',marginBottom:18}}>
+        {filtered.length===0 && <Empty label="No data."/>}
+        {filtered.map((s,i)=>(
+          <div key={s.itemName} style={{padding:'10px 12px',borderBottom:i<filtered.length-1?'1px solid var(--border)':'none'}}>
+            <div style={{display:'flex',justifyContent:'space-between'}}>
+              <span style={{fontWeight:600,fontSize:13.5}}>{s.itemName}</span>
+              <span style={{fontSize:12.5,color:'var(--text-muted)'}}>{s.totalQty} {s.unit} total</span>
+            </div>
+            <div style={{fontSize:11.5,color:'var(--text-muted)'}}>Bought {s.timesOfPurchase}× · last {fmtDate(s.lastPurchaseDate)} ({s.lastPurchaseQty} {s.unit})</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'6px 2px 8px'}}>
+        <h3 style={{fontSize:14,margin:0}}>Purchase history</h3>
+        <select value={monthFilter} onChange={e=>setMonthFilter(e.target.value)} style={{width:'auto',fontSize:12}}>
+          <option value="">All months</option>
+          {months.map(m=><option key={m}>{m}</option>)}
+        </select>
+      </div>
+      <div className="card" style={{padding:'4px'}}>
+        {histFiltered.length===0 && <Empty label="No entries."/>}
+        {histFiltered.map((l,i)=>(
+          <div key={l.id} style={{display:'flex',justifyContent:'space-between',padding:'9px 12px',borderBottom:i<histFiltered.length-1?'1px solid var(--border)':'none',fontSize:13}}>
+            <span>{l.itemName} <span style={{color:'var(--text-muted)'}}>· {l.quantity} {l.unit}</span></span>
+            <span style={{color:'var(--text-muted)',fontSize:11.5}}>{fmtDate(l.purchasedAt)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportsView({items, log, checklist, settings}){
+  function exportCSV(){
+    const rows=[["Item","Category","Quantity","Unit","Date","Note"]];
+    log.forEach(l=>rows.push([l.itemName,l.category,l.quantity,l.unit,l.purchasedAt,l.note||""]));
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv],{type:"text/csv"}); downloadBlob(blob,"grocery-log.csv");
+  }
+  function exportExcel(){
+    const wb = XLSX.utils.book_new();
+    const wsLog = XLSX.utils.json_to_sheet(log.map(l=>({Item:l.itemName,Category:l.category,Quantity:l.quantity,Unit:l.unit,Date:l.purchasedAt,Note:l.note||""})));
+    XLSX.utils.book_append_sheet(wb, wsLog, "GroceryLog");
+    const summary = computeSummary(log);
+    const wsSum = XLSX.utils.json_to_sheet(summary.map(s=>({Item:s.itemName,Category:s.category,"Total Qty":s.totalQty,Unit:s.unit,"Times Purchased":s.timesOfPurchase,"Last Date":s.lastPurchaseDate,"Last Qty":s.lastPurchaseQty})));
+    XLSX.utils.book_append_sheet(wb, wsSum, "GrocerySummary");
+    const wsItems = XLSX.utils.json_to_sheet(items.map(i=>({Name:i.name,Category:i.category,Unit:i.defaultUnit,Staple:i.isStaple})));
+    XLSX.utils.book_append_sheet(wb, wsItems, "ItemLibrary");
+    XLSX.writeFile(wb, "grocery-manager.xlsx");
+  }
+  function exportPDF(){
+    const doc = new jspdf.jsPDF();
+    doc.setFontSize(16); doc.text("Grocery Monthly Report", 14, 16);
+    const summary = computeSummary(log);
+    doc.autoTable({
+      startY: 22,
+      head: [["Item","Category","Total Qty","Times","Last purchase"]],
+      body: summary.map(s=>[s.itemName,s.category,`${s.totalQty} ${s.unit}`,s.timesOfPurchase,fmtDate(s.lastPurchaseDate)])
+    });
+    doc.save("grocery-report.pdf");
+  }
+  function printChecklist(){
+    const pending = checklist.filter(c=>!c.checked);
+    const total = pending.reduce((s,c)=>s+(Number(c.amount)||0),0);
+    const w = window.open("","_blank");
+    w.document.write(`<h2>Shopping Checklist</h2><ul>${pending.map(c=>`<li>${c.itemName} ${c.qty?`(${c.qty} ${c.unit})`:""} ${c.amount?`— ${fmtMoney(c.amount,settings.currency)}`:""}</li>`).join("")}</ul><p><b>Total: ${fmtMoney(total,settings.currency)}</b></p>`);
+    w.print();
+  }
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <div className="card" style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+        <button className="btn btn-soft" onClick={exportCSV}>Download CSV (log)</button>
+        <button className="btn btn-soft" onClick={exportExcel}>Download Excel (.xlsx)</button>
+        <button className="btn btn-soft" onClick={exportPDF}>Download PDF monthly report</button>
+        <button className="btn btn-soft" onClick={printChecklist}>Print checklist</button>
+      </div>
+    </div>
+  );
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function BackupView({state, restoreState}){
+  const fileRef = useRef();
+  const excelRef = useRef();
+  function exportJSON(){
+    const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+    downloadBlob(blob, "grocery-backup.json");
+  }
+  function importJSON(e){
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try{ const data = JSON.parse(r.result); restoreState(data); alert("Backup restored."); }
+      catch(err){ alert("Invalid backup file."); }
+    };
+    r.readAsText(f);
+  }
+  function importExcel(e){
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try{
+        const wb = XLSX.read(r.result, {type:"binary"});
+        const sheetName = wb.SheetNames.find(n=>/grocerylog|log/i.test(n)) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+        const newLog = rows.map(row=>{
+          const item = row.Item || row.item || row["Item Name"] || "";
+          const qty = row.Quantity || row.quantity || row.Qty || 0;
+          const unit = row.Unit || row.unit || "pcs";
+          const date = row.Date || row.date || row.Timestamp || todayISO();
+          const dISO = new Date(date).toISOString? new Date(date).toISOString().slice(0,10) : todayISO();
+          return { id: uid(), itemName: String(item), category: row.Category||"Household / Cleaning", quantity:Number(qty)||0, unit, note: null, purchasedAt: dISO, month: monthKey(dISO) };
+        }).filter(l=>l.itemName);
+        restoreState({...state, log:[...newLog, ...state.log]});
+        alert(`Imported ${newLog.length} rows from Excel.`);
+      }catch(err){ alert("Could not read Excel file: "+err.message); }
+    };
+    r.readAsBinaryString(f);
+  }
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 8px',fontSize:15}}>Full backup</h3>
+        <button className="btn btn-soft" style={{width:'100%',marginBottom:8}} onClick={exportJSON}>Export JSON backup</button>
+        <button className="btn btn-soft" style={{width:'100%'}} onClick={()=>fileRef.current.click()}>Import JSON backup</button>
+        <input ref={fileRef} type="file" accept="application/json" style={{display:'none'}} onChange={importJSON}/>
+      </div>
+      <div className="card" style={{padding:16}}>
+        <h3 style={{margin:'0 0 8px',fontSize:15}}>Import from Excel</h3>
+        <div style={{fontSize:12.5,color:'var(--text-muted)',marginBottom:8}}>One-time migration from your original sheet (columns: Item, Quantity, Unit, Date).</div>
+        <button className="btn btn-soft" style={{width:'100%'}} onClick={()=>excelRef.current.click()}>Choose .xlsx file</button>
+        <input ref={excelRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importExcel}/>
+      </div>
+    </div>
+  );
+}
+
+function SettingsView({settings, setSettings, syncStatus, onConnectFirebase}){
+  const [cur,setCur]=useState(settings.currency);
+  const [cfgText,setCfgText]=useState(settings.firebaseConfig? JSON.stringify(settings.firebaseConfig,null,2):"");
+  function saveCurrency(){ setSettings(s=>({...s,currency:cur})); }
+  function toggleDark(){ setSettings(s=>({...s,theme: s.theme==="dark"?"light":"dark"})); }
+  function connect(){
+    try{
+      const cfg = JSON.parse(cfgText);
+      setSettings(s=>({...s,firebaseConfig:cfg}));
+      onConnectFirebase(cfg);
+    }catch(e){ alert("Paste a valid Firebase config JSON (apiKey, authDomain, projectId, ...)."); }
+  }
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 8px',fontSize:15}}>Appearance</h3>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:13.5}}>Dark mode</span>
+          <button className="btn btn-soft" onClick={toggleDark}>{settings.theme==="dark"?"On":"Off"}</button>
+        </div>
+      </div>
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 8px',fontSize:15}}>Currency</h3>
+        <div style={{display:'flex',gap:8}}>
+          <input value={cur} onChange={e=>setCur(e.target.value)} style={{width:80}}/>
+          <button className="btn btn-primary" onClick={saveCurrency}>Save</button>
+        </div>
+      </div>
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <h3 style={{margin:'0 0 6px',fontSize:15}}>Firebase sync (optional)</h3>
+        <div style={{fontSize:12.5,color:'var(--text-muted)',marginBottom:8}}>
+          Paste your Firebase web config from project <b>my-personal-apps-f4ad7</b> (Console → Project settings → your web app). Data always works offline via this browser; connecting adds cross-device sync via Anonymous Auth + Firestore.
+        </div>
+        <textarea rows="6" placeholder='{"apiKey":"...","authDomain":"...","projectId":"my-personal-apps-f4ad7", ...}' value={cfgText} onChange={e=>setCfgText(e.target.value)} style={{fontFamily:'monospace',fontSize:11.5}}/>
+        <button className="btn btn-primary" style={{width:'100%',marginTop:8}} onClick={connect}>Connect</button>
+        <div style={{fontSize:12,marginTop:8,color: syncStatus==="connected"?"var(--primary)":syncStatus.startsWith("error")?"var(--tomato)":"var(--text-muted)"}}>Status: {syncStatus}</div>
+      </div>
+      <div style={{textAlign:'center',fontSize:11.5,color:'var(--text-muted)',marginTop:20}}>designed by Hasan Jabed</div>
+    </div>
+  );
+}
+
+function MoreView({page,setPage,...rest}){
+  if(page==="summary") return <><SubHeader title="Summary & History" onBack={()=>setPage(null)}/><SummaryView log={rest.log}/></>;
+  if(page==="reports") return <><SubHeader title="Reports & Export" onBack={()=>setPage(null)}/><ReportsView {...rest}/></>;
+  if(page==="backup") return <><SubHeader title="Backup & Restore" onBack={()=>setPage(null)}/><BackupView state={rest.state} restoreState={rest.restoreState}/></>;
+  if(page==="settings") return <><SubHeader title="Settings" onBack={()=>setPage(null)}/><SettingsView settings={rest.settings} setSettings={rest.setSettings} syncStatus={rest.syncStatus} onConnectFirebase={rest.onConnectFirebase}/></>;
+  const menu=[
+    {key:"summary",label:"Summary / History",desc:"Per-item rollup & purchase history"},
+    {key:"reports",label:"Reports & Export",desc:"CSV, Excel, PDF, print checklist"},
+    {key:"backup",label:"Backup & Restore",desc:"JSON backup, Excel import"},
+    {key:"settings",label:"Settings",desc:"Currency, theme, Firebase sync"},
+  ];
+  return (
+    <div className="fade-in" style={{padding:'0 16px 100px'}}>
+      {menu.map(m=>(
+        <div key={m.key} className="card" style={{padding:'14px 16px',marginBottom:10,cursor:'pointer'}} onClick={()=>setPage(m.key)}>
+          <div style={{fontWeight:700,fontSize:14}}>{m.label}</div>
+          <div style={{fontSize:12,color:'var(--text-muted)'}}>{m.desc}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function SubHeader({title,onBack}){
+  return (
+    <div style={{padding:'20px 16px 8px',display:'flex',alignItems:'center',gap:10}}>
+      <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+      <h2 className="display" style={{margin:0,fontSize:18}}>{title}</h2>
+    </div>
+  );
+}
+
+/* ---------------- Bottom nav ---------------- */
+function BottomNav({tab,setTab}){
+  const tabs=[["dashboard","Home"],["checklist","Checklist"],["log","+ Log"],["items","Items"],["more","More"]];
+  return (
+    <div style={{position:'fixed',bottom:0,left:0,right:0,background:'var(--surface)',borderTop:'1px solid var(--border)',display:'flex',padding:'6px 4px calc(6px + env(safe-area-inset-bottom))',zIndex:50}}>
+      {tabs.map(([key,label])=>(
+        <div key={key} onClick={()=>setTab(key)} className={tab===key?"tab-active":"tab-inactive"} style={{flex:1,textAlign:'center',padding:'6px 0',fontSize:11.5,fontWeight:700,cursor:'pointer'}}>
+          {label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- App root ---------------- */
+function App(){
+  const [state,setState]=useState(()=>{
+    const loaded = loadLocal();
+    if(!loaded) return defaultState();
+    // if an earlier session saved before Firebase config was baked in, fill it in now
+    if(!loaded.settings || !loaded.settings.firebaseConfig || !loaded.settings.firebaseConfig.apiKey){
+      loaded.settings = {...defaultState().settings, ...(loaded.settings||{}), firebaseConfig: defaultState().settings.firebaseConfig};
+    }
+    return loaded;
+  });
+  const [tab,setTab]=useState("dashboard");
+  const [morePage,setMorePage]=useState(null);
+  const [shopping,setShopping]=useState(false);
+  const [syncStatus,setSyncStatus]=useState("offline (local only)");
+  const firstLoad = useRef(true);
+
+  const items = state.items, log = state.log, checklist = state.checklist, settings = state.settings;
+  function setItems(fn){ setState(s=>({...s, items: typeof fn==="function"? fn(s.items): fn})); }
+  function setLog(fn){ setState(s=>({...s, log: typeof fn==="function"? fn(s.log): fn})); }
+  function setChecklist(fn){ setState(s=>({...s, checklist: typeof fn==="function"? fn(s.checklist): fn})); }
+  function setSettings(fn){ setState(s=>({...s, settings: typeof fn==="function"? fn(s.settings): fn})); }
+
+  const skipNextCloudSave = useRef(false);
+  const lastCloudWrite = useRef(0);
+
+  useEffect(()=>{
+    document.documentElement.classList.toggle("dark", settings.theme==="dark");
+  },[settings.theme]);
+
+  useEffect(()=>{
+    saveLocal(state);
+    if(!firstLoad.current && !skipNextCloudSave.current){
+      lastCloudWrite.current = Date.now();
+      cloudSave(state);
+    }
+    skipNextCloudSave.current = false;
+    firstLoad.current=false;
+  },[state]);
+
+  useEffect(()=>{
+    if(settings.firebaseConfig && settings.firebaseConfig.apiKey){
+      let unsub = ()=>{};
+      initFirebase(settings.firebaseConfig, setSyncStatus).then(async ok=>{
+        if(ok){
+          const cloud = await cloudLoad();
+          if(cloud){
+            skipNextCloudSave.current = true;
+            setState(s=>({...s, items:cloud.items||s.items, log:cloud.log||s.log, checklist:cloud.checklist||s.checklist}));
+          }
+          // live updates from other devices
+          unsub = subscribeCloud((cloud)=>{
+            // ignore snapshots that just echo back our own recent write
+            if(Date.now() - lastCloudWrite.current < 1500) return;
+            skipNextCloudSave.current = true;
+            setState(s=>({...s, items:cloud.items||s.items, log:cloud.log||s.log, checklist:cloud.checklist||s.checklist}));
+          });
+        }
+      });
+      return ()=>unsub();
+    }
+    // eslint-disable-next-line
+  },[]);
+
+  function addToChecklist(name, category, unit){
+    setChecklist(prev=>{
+      if(prev.find(c=>c.itemName===name && !c.checked)) return prev;
+      return [...prev,{id:uid(),itemName:name,category,qty:null,unit,checked:false,amount:null,source:"suggestion",addedAt:Date.now()}];
+    });
+  }
+  function restoreState(data){ setState({...defaultState(), ...data, settings:{...defaultState().settings, ...(data.settings||{})}}); }
+
+  return (
+    <div style={{maxWidth:480,margin:'0 auto',minHeight:'100vh',position:'relative'}}>
+      {tab==="dashboard" && <><TopBar title="Home's Grocery" subtitle="Regularly tracked, always ready"/><Dashboard items={items} log={log} checklist={checklist} settings={settings} addToChecklist={addToChecklist}/></>}
+      {tab==="checklist" && <><TopBar title="Checklist" subtitle="Note it, price it, shop it"/><ChecklistView checklist={checklist} setChecklist={setChecklist} items={items} settings={settings} onOpenShopping={()=>setShopping(true)}/></>}
+      {tab==="log" && <><TopBar title="Log purchase" subtitle="Keep the record fresh"/><LogView items={items} log={log} setLog={setLog}/></>}
+      {tab==="items" && <><TopBar title="Item Library" subtitle="Your grocery catalogue"/><ItemsView items={items} setItems={setItems} addToChecklist={addToChecklist}/></>}
+      {tab==="more" && <><TopBar title="More" subtitle="Reports, backup & settings"/>
+        <MoreView page={morePage} setPage={setMorePage} log={log} items={items} checklist={checklist} settings={settings} setSettings={setSettings} state={state} restoreState={restoreState} syncStatus={syncStatus} onConnectFirebase={(cfg)=>initFirebase(cfg,setSyncStatus)}/>
+      </>}
+
+      {shopping && <ShoppingMode checklist={checklist} setChecklist={setChecklist} settings={settings} onClose={()=>setShopping(false)}/>}
+      {!shopping && <BottomNav tab={tab} setTab={(t)=>{setTab(t); setMorePage(null);}}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<script>
+  // Manually transform the app source with the classic JSX runtime,
+  // so the browser never sees an ES "import" statement (which plain
+  // <script> tags can't execute) — babel-standalone's automatic-runtime
+  // default otherwise emits one and the app silently fails to render.
+  (function(){
+    var code = document.getElementById('app-source').textContent;
+    var output = Babel.transform(code, {
+      presets: [["react", {runtime:"classic"}]],
+      filename: "app.jsx"
+    }).code;
+    var s = document.createElement('script');
+    s.text = output;
+    document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>
