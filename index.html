@@ -638,8 +638,8 @@ function ShoppingMode({checklist, setChecklist, settings, onClose}){
   const [confirm,setConfirm]=useState(null);
   const pending = checklist.filter(c=>!c.checked);
   const remaining = pending.reduce((s,c)=>s+(Number(c.amount)||0),0);
-  const byCat={};
-  pending.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
+  // one flat list, in the same order as the checklist (no category grouping)
+  const byCat = pending.length ? {all:pending} : {};
   function toggle(id){ setChecklist(prev=>prev.map(c=>c.id===id?{...c,checked:!c.checked}:c)); }
   return (
     <div style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:100,overflowY:'auto'}} className="fade-in">
@@ -656,7 +656,6 @@ function ShoppingMode({checklist, setChecklist, settings, onClose}){
         {confirm && <ConfirmDialog {...confirm} onClose={()=>setConfirm(null)}/>}
         {Object.entries(byCat).map(([cat,arr])=>(
           <div key={cat} style={{marginBottom:18}}>
-            <div style={{fontSize:12,fontWeight:800,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',margin:'0 4px 8px'}}>{cat}</div>
             <div className="card" style={{padding:'4px'}}>
               {arr.map((c,i)=>(
                 <div key={c.id} onClick={()=>setConfirm({title:"Mark as done?",message:"Mark “"+c.itemName+"” as bought?",yesLabel:"Yes, done",onYes:()=>toggle(c.id)})} className="checkline" style={{display:'flex',alignItems:'center',gap:12,padding:'16px 12px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}}>
