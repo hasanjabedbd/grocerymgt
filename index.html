@@ -8,9 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -364,6 +364,7 @@ function Dashboard({items, log, checklist, settings, goTab, addToChecklist}){
 function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping}){
   const [name,setName]=useState(""); const [qty,setQty]=useState(""); const [unit,setUnit]=useState("");
   const [amount,setAmount]=useState(""); const [suggest,setSuggest]=useState([]);
+  const [editId,setEditId]=useState(null);
 
   const pending = checklist.filter(c=>!c.checked);
   const done = checklist.filter(c=>c.checked);
@@ -390,6 +391,23 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
   function remove(id){ setChecklist(prev=>prev.filter(c=>c.id!==id)); }
   function updateAmount(id, v){ setChecklist(prev=>prev.map(c=>c.id===id?{...c,amount: v===""?null:Number(v)}:c)); }
   function clearChecked(){ setChecklist(prev=>prev.filter(c=>!c.checked)); }
+  function saveEdit(id, f){
+    const nm=f.name.trim(); if(!nm) return;
+    const match = items.find(i=>i.name.toLowerCase()===nm.toLowerCase());
+    setChecklist(prev=>prev.map(c=>c.id===id?{...c,
+      itemName:nm, category: match? match.category : c.category,
+      qty: f.qty.trim()||null, unit: f.unit,
+      amount: f.amount===""? null : Number(f.amount)}:c));
+    setEditId(null);
+  }
+  function reorder(from,to){
+    if(from===to) return;
+    setChecklist(prev=>{
+      const p=prev.filter(c=>!c.checked), d=prev.filter(c=>c.checked);
+      const [m]=p.splice(from,1); p.splice(to,0,m);
+      return [...p,...d];
+    });
+  }
 
   return (
     <div className="fade-in" style={{padding:'0 16px 100px'}}>
@@ -428,19 +446,11 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
       {pending.length===0 && done.length===0 && <Empty label="Checklist is empty. Add items you need to buy."/>}
 
       {pending.length>0 && (
-        <div className="card" style={{padding:'6px 4px',marginBottom:14}}>
-          {pending.map((c,i)=>(
-            <div key={c.id} className="checkline" style={{display:'flex',alignItems:'center',gap:10,padding:'10px 10px',borderBottom: i<pending.length-1?'1px solid var(--border)':'none'}}>
-              <input type="checkbox" checked={false} onChange={()=>toggle(c.id)} style={{width:18,height:18}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:13.5}}>{c.itemName} {c.qty && <span style={{color:'var(--text-muted)',fontWeight:400}}>· {c.qty} {c.unit}</span>}</div>
-                <CategoryChip cat={c.category}/>
-              </div>
-              <input style={{width:78,fontSize:12,padding:'6px 8px'}} placeholder={settings.currency} value={c.amount??""} onChange={e=>updateAmount(c.id,e.target.value)} />
-              <button className="btn btn-ghost" onClick={()=>remove(c.id)}>✕</button>
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{fontSize:11,color:'var(--text-muted)',margin:'0 4px 6px'}}>Hold an item and drag to reorder</div>
+          <PendingList pending={pending} settings={settings} editId={editId} setEditId={setEditId}
+            toggle={toggle} remove={remove} updateAmount={updateAmount} saveEdit={saveEdit} reorder={reorder}/>
+        </>
       )}
 
       {done.length>0 && (
@@ -460,6 +470,145 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PendingList({pending, settings, editId, setEditId, toggle, remove, updateAmount, saveEdit, reorder}){
+  const [drag,setDrag]=useState(null); // {id,from,to,dy,h}
+  const rowRefs = useRef({});
+  const st = useRef({timer:null,active:false,startX:0,startY:0,lastY:0,startScroll:0,rects:[],from:0,id:null,to:0,raf:null});
+
+  useEffect(()=>{
+    // block page scrolling while a drag is active (needs non-passive listener)
+    const block = (e)=>{ if(st.current.active && e.cancelable) e.preventDefault(); };
+    document.addEventListener('touchmove', block, {passive:false});
+    return ()=>document.removeEventListener('touchmove', block);
+  },[]);
+
+  function computeDrag(){
+    const s=st.current;
+    const dy = (s.lastY - s.startY) + (window.scrollY - s.startScroll);
+    const me = s.rects[s.from];
+    const center = me.mid + dy;
+    let to = 0;
+    s.rects.forEach((r,i)=>{ if(i!==s.from && r.mid < center) to++; });
+    s.to = to;
+    setDrag({id:s.id, from:s.from, to, dy, h:me.h});
+  }
+  function autoScroll(){
+    const s=st.current;
+    if(!s.active) return;
+    const edge=80; let v=0;
+    if(s.lastY < edge+60) v=-8; else if(s.lastY > window.innerHeight-edge) v=8;
+    if(v){ window.scrollBy(0,v); computeDrag(); }
+    s.raf=requestAnimationFrame(autoScroll);
+  }
+  function startDrag(idx,id){
+    const s=st.current;
+    s.rects = pending.map(c=>{
+      const el=rowRefs.current[c.id]; const r=el.getBoundingClientRect();
+      return {mid: r.top + window.scrollY + r.height/2, h:r.height};
+    });
+    s.active=true; s.from=idx; s.to=idx; s.id=id; s.startScroll=window.scrollY;
+    if(navigator.vibrate) try{navigator.vibrate(15);}catch(e){}
+    computeDrag();
+    s.raf=requestAnimationFrame(autoScroll);
+  }
+  function endDrag(commit){
+    const s=st.current;
+    clearTimeout(s.timer); s.timer=null;
+    if(s.raf) cancelAnimationFrame(s.raf);
+    window.removeEventListener('pointermove',onMove);
+    window.removeEventListener('pointerup',onUp);
+    window.removeEventListener('pointercancel',onCancel);
+    const was=s.active; s.active=false;
+    setDrag(null);
+    if(was && commit) reorder(s.from,s.to);
+  }
+  function onMove(e){
+    const s=st.current;
+    s.lastY=e.clientY;
+    if(!s.active){
+      // moved before long-press fired => user is scrolling, cancel
+      if(Math.abs(e.clientY-s.startY)>8 || Math.abs(e.clientX-s.startX)>8) endDrag(false);
+      return;
+    }
+    computeDrag();
+  }
+  function onUp(){ endDrag(true); }
+  function onCancel(){ endDrag(false); }
+  function onDown(e, idx, id){
+    if(editId) return;
+    if(e.target.closest('input,button,select,textarea')) return;
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    const s=st.current;
+    s.startX=e.clientX; s.startY=e.clientY; s.lastY=e.clientY;
+    window.addEventListener('pointermove',onMove);
+    window.addEventListener('pointerup',onUp);
+    window.addEventListener('pointercancel',onCancel);
+    s.timer=setTimeout(()=>startDrag(idx,id), 350);
+  }
+
+  return (
+    <div className="card" style={{padding:'6px 4px',marginBottom:14,userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none'}}>
+      {pending.map((c,i)=>{
+        let shift=0, isDrag=false;
+        if(drag){
+          if(c.id===drag.id){ isDrag=true; shift=drag.dy; }
+          else if(drag.from<drag.to && i>drag.from && i<=drag.to) shift=-drag.h;
+          else if(drag.from>drag.to && i>=drag.to && i<drag.from) shift=drag.h;
+        }
+        const rowStyle={
+          display:'flex',alignItems:'center',gap:10,padding:'10px 10px',
+          borderBottom: i<pending.length-1?'1px solid var(--border)':'none',
+          transform: shift?`translateY(${shift}px)`:'none',
+          transition: isDrag?'none':(drag?'transform .18s ease':'none'),
+          position:'relative', zIndex:isDrag?10:1,
+          background: isDrag?'var(--surface)':'transparent',
+          boxShadow: isDrag?'var(--shadow)':'none',
+          borderRadius: isDrag?12:0,
+          touchAction:'manipulation'
+        };
+        if(editId===c.id) return (
+          <EditRow key={c.id} c={c} settings={settings} onSave={(f)=>saveEdit(c.id,f)} onCancel={()=>setEditId(null)} last={i===pending.length-1}/>
+        );
+        return (
+          <div key={c.id} ref={el=>{rowRefs.current[c.id]=el;}} className="checkline"
+            onPointerDown={e=>onDown(e,i,c.id)} onContextMenu={e=>e.preventDefault()} style={rowStyle}>
+            <input type="checkbox" checked={false} onChange={()=>toggle(c.id)} style={{width:18,height:18}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:13.5}}>{c.itemName} {c.qty && <span style={{color:'var(--text-muted)',fontWeight:400}}>· {c.qty} {c.unit}</span>}</div>
+              <CategoryChip cat={c.category}/>
+            </div>
+            <input style={{width:70,fontSize:12,padding:'6px 8px'}} placeholder={settings.currency} value={c.amount??""} onChange={e=>updateAmount(c.id,e.target.value)} />
+            <button className="btn btn-ghost" style={{padding:'6px 8px'}} aria-label="Edit item" onClick={()=>setEditId(c.id)}>✎</button>
+            <button className="btn btn-ghost" style={{padding:'6px 8px'}} aria-label="Remove item" onClick={()=>remove(c.id)}>✕</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EditRow({c, settings, onSave, onCancel, last}){
+  const [f,setF]=useState({name:c.itemName, qty:c.qty||"", unit:c.unit||"", amount:c.amount??""});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  return (
+    <div style={{padding:'12px 10px',background:'var(--primary-soft)',borderRadius:12,margin:'2px 0',borderBottom:last?'none':'1px solid var(--border)'}}>
+      <input autoFocus placeholder="Item name" value={f.name} onChange={e=>set('name',e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSave(f);}}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <input placeholder="Qty" value={f.qty} onChange={e=>set('qty',e.target.value)} />
+        <select value={f.unit} onChange={e=>set('unit',e.target.value)}>
+          <option value="">Unit</option>
+          {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+      <input style={{marginTop:8}} placeholder={`Amount (${settings.currency})`} value={f.amount} onChange={e=>set('amount',e.target.value)} />
+      <div style={{display:'flex',gap:8,marginTop:10}}>
+        <button className="btn btn-primary" style={{flex:1}} onClick={()=>onSave(f)}>Save</button>
+        <button className="btn btn-ghost" style={{flex:1}} onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }
