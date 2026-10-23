@@ -365,6 +365,9 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
   const [name,setName]=useState(""); const [qty,setQty]=useState(""); const [unit,setUnit]=useState("");
   const [amount,setAmount]=useState(""); const [suggest,setSuggest]=useState([]);
   const [editId,setEditId]=useState(null);
+  const [confirm,setConfirm]=useState(null);
+  const nm = (id)=>{ const c=checklist.find(x=>x.id===id); return c? c.itemName : "this item"; };
+  function ask(title,message,yesLabel,onYes,danger){ setConfirm({title,message,yesLabel,onYes,danger}); }
 
   const pending = checklist.filter(c=>!c.checked);
   const done = checklist.filter(c=>c.checked);
@@ -449,7 +452,9 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
         <>
           <div style={{fontSize:11,color:'var(--text-muted)',margin:'0 4px 6px'}}>Hold an item and drag to reorder</div>
           <PendingList pending={pending} settings={settings} editId={editId} setEditId={setEditId}
-            toggle={toggle} remove={remove} updateAmount={updateAmount} saveEdit={saveEdit} reorder={reorder}/>
+            onEdit={(id)=>ask("Edit item?","Do you want to edit “"+nm(id)+"”?","Edit",()=>setEditId(id))}
+            toggle={(id)=>ask("Mark as done?","Mark “"+nm(id)+"” as bought?","Yes, done",()=>toggle(id))}
+            remove={(id)=>ask("Delete item?","“"+nm(id)+"” will be removed from the checklist.","Delete",()=>remove(id),true)} updateAmount={updateAmount} saveEdit={saveEdit} reorder={reorder}/>
         </>
       )}
 
@@ -457,24 +462,40 @@ function ChecklistView({checklist, setChecklist, items, settings, onOpenShopping
         <div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'6px 4px'}}>
             <span style={{fontSize:12,color:'var(--text-muted)',fontWeight:700}}>Checked ({done.length})</span>
-            <button className="btn btn-ghost" style={{fontSize:12}} onClick={clearChecked}>Clear checked</button>
+            <button className="btn btn-ghost" style={{fontSize:12}} onClick={()=>ask("Clear checked items?","All "+done.length+" checked items will be deleted.","Clear",clearChecked,true)}>Clear checked</button>
           </div>
           <div className="card" style={{padding:'6px 4px',opacity:.6}}>
             {done.map((c,i)=>(
               <div key={c.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderBottom:i<done.length-1?'1px solid var(--border)':'none'}}>
-                <input type="checkbox" checked={true} onChange={()=>toggle(c.id)} style={{width:18,height:18}}/>
+                <input type="checkbox" checked={true} onChange={()=>ask("Move back to pending?","Un-check “"+c.itemName+"”?","Yes",()=>toggle(c.id))} style={{width:18,height:18}}/>
                 <div style={{flex:1,textDecoration:'line-through',fontSize:13}}>{c.itemName}</div>
-                <button className="btn btn-ghost" onClick={()=>remove(c.id)}>✕</button>
+                <button className="btn btn-ghost" onClick={()=>ask("Delete item?","“"+c.itemName+"” will be removed from the checklist.","Delete",()=>remove(c.id),true)}>✕</button>
               </div>
             ))}
           </div>
         </div>
       )}
+      {confirm && <ConfirmDialog {...confirm} onClose={()=>setConfirm(null)}/>}
     </div>
   );
 }
 
-function PendingList({pending, settings, editId, setEditId, toggle, remove, updateAmount, saveEdit, reorder}){
+function ConfirmDialog({title,message,yesLabel,onYes,danger,onClose}){
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div className="card pop" onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:340,padding:20}}>
+        <h3 style={{margin:'0 0 6px',fontSize:18}}>{title}</h3>
+        <div style={{fontSize:14,color:'var(--text-muted)',marginBottom:18}}>{message}</div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-soft" style={{flex:1}} onClick={onClose}>Cancel</button>
+          <button className={"btn "+(danger?"btn-tomato":"btn-primary")} style={{flex:1}} onClick={()=>{onClose(); onYes();}}>{yesLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PendingList({pending, settings, editId, setEditId, onEdit, toggle, remove, updateAmount, saveEdit, reorder}){
   const [drag,setDrag]=useState(null); // {id,from,to,dy,h}
   const rowRefs = useRef({});
   const st = useRef({timer:null,active:false,startX:0,startY:0,lastY:0,startScroll:0,rects:[],from:0,id:null,to:0,raf:null});
@@ -582,7 +603,7 @@ function PendingList({pending, settings, editId, setEditId, toggle, remove, upda
               <CategoryChip cat={c.category}/>
             </div>
             <input style={{width:70,fontSize:12,padding:'6px 8px'}} placeholder={settings.currency} value={c.amount??""} onChange={e=>updateAmount(c.id,e.target.value)} />
-            <button className="btn btn-ghost" style={{padding:'6px 8px'}} aria-label="Edit item" onClick={()=>setEditId(c.id)}>✎</button>
+            <button className="btn btn-ghost" style={{padding:'6px 8px'}} aria-label="Edit item" onClick={()=>onEdit(c.id)}>✎</button>
             <button className="btn btn-ghost" style={{padding:'6px 8px'}} aria-label="Remove item" onClick={()=>remove(c.id)}>✕</button>
           </div>
         );
@@ -614,6 +635,7 @@ function EditRow({c, settings, onSave, onCancel, last}){
 }
 
 function ShoppingMode({checklist, setChecklist, settings, onClose}){
+  const [confirm,setConfirm]=useState(null);
   const pending = checklist.filter(c=>!c.checked);
   const remaining = pending.reduce((s,c)=>s+(Number(c.amount)||0),0);
   const byCat={};
@@ -631,12 +653,13 @@ function ShoppingMode({checklist, setChecklist, settings, onClose}){
       </div>
       <div style={{padding:'16px 16px 60px'}}>
         {Object.keys(byCat).length===0 && <Empty label="All done! 🎉"/>}
+        {confirm && <ConfirmDialog {...confirm} onClose={()=>setConfirm(null)}/>}
         {Object.entries(byCat).map(([cat,arr])=>(
           <div key={cat} style={{marginBottom:18}}>
             <div style={{fontSize:12,fontWeight:800,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',margin:'0 4px 8px'}}>{cat}</div>
             <div className="card" style={{padding:'4px'}}>
               {arr.map((c,i)=>(
-                <div key={c.id} onClick={()=>toggle(c.id)} className="checkline" style={{display:'flex',alignItems:'center',gap:12,padding:'16px 12px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}}>
+                <div key={c.id} onClick={()=>setConfirm({title:"Mark as done?",message:"Mark “"+c.itemName+"” as bought?",yesLabel:"Yes, done",onYes:()=>toggle(c.id)})} className="checkline" style={{display:'flex',alignItems:'center',gap:12,padding:'16px 12px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}}>
                   <div style={{width:26,height:26,borderRadius:8,border:'2px solid var(--primary)'}}/>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,fontSize:15}}>{c.itemName}</div>
